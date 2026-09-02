@@ -180,6 +180,7 @@ NEO4J_VECTOR_INDEX_NAMES = {
     'entity_name_embedding': ('Entity', 'name_embedding'),
     'community_name_embedding': ('Community', 'name_embedding'),
 }
+NEO4J_ENTITY_VECTOR_INDEX_NAME = 'entity_name_embedding'
 NEO4J_EDGE_VECTOR_INDEX_NAME = 'edge_fact_embedding'
 
 # HNSW cannot pre-filter on group_id or SearchFilters, so the procedure is asked

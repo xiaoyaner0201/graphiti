@@ -30,6 +30,7 @@ from graphiti_core.driver.driver import (
 from graphiti_core.edges import EntityEdge, get_entity_edge_from_record
 from graphiti_core.graph_queries import (
     NEO4J_EDGE_VECTOR_INDEX_NAME,
+    NEO4J_ENTITY_VECTOR_INDEX_NAME,
     get_nodes_query,
     get_relationships_query,
     get_vector_cosine_func_query,
@@ -778,24 +779,60 @@ async def node_similarity_search(
         else:
             return []
     else:
-        query = (
-            """
-                                                                                                                                    MATCH (n:Entity)
-                                                                                                                                    """
-            + filter_query
-            + """
-            WITH n, """
-            + get_vector_cosine_func_query('n.name_embedding', search_vector_var, driver.provider)
-            + """ AS score
-            WHERE score > $min_score
+        vector_index_query = ''
+        if use_vector_index(driver):
+            vector_index_query = get_vector_similarity_query(
+                driver.provider,
+                index_name=NEO4J_ENTITY_VECTOR_INDEX_NAME,
+                entity_var='n',
+                limit=limit,
+                relationship=False,
+            )
+
+        if vector_index_query:
+            # HNSW yields (n, score) directly from the entity_name_embedding index.
+            # group_id / SearchFilters cannot be pushed into the procedure, so they
+            # are applied as post-filters over the over-fetched candidate set.
+            candidate_filters = ['score > $min_score']
+            if filter_queries:
+                candidate_filters.extend(filter_queries)
+
+            query = (
+                vector_index_query
+                + """
+            WITH n, score
+            WHERE """
+                + ' AND '.join(candidate_filters)
+                + """
             RETURN
             """
-            + get_entity_node_return_query(driver.provider)
-            + """
+                + get_entity_node_return_query(driver.provider)
+                + """
             ORDER BY score DESC
             LIMIT $limit
             """
-        )
+            )
+        else:
+            query = (
+                """
+                                                                                                                                    MATCH (n:Entity)
+                                                                                                                                    """
+                + filter_query
+                + """
+            WITH n, """
+                + get_vector_cosine_func_query(
+                    'n.name_embedding', search_vector_var, driver.provider
+                )
+                + """ AS score
+            WHERE score > $min_score
+            RETURN
+            """
+                + get_entity_node_return_query(driver.provider)
+                + """
+            ORDER BY score DESC
+            LIMIT $limit
+            """
+            )
 
         records, _, _ = await driver.execute_query(
             query,
